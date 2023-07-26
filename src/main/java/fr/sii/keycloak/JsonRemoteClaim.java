@@ -31,6 +31,10 @@ public class JsonRemoteClaim extends AbstractOIDCProtocolMapper implements OIDCA
     private final static String REMOTE_PARAMETERS = "remote.parameters";
     private final static String REMOTE_PARAMETERS_USERNAME = "remote.parameters.username";
     private final static String REMOTE_PARAMETERS_CLIENTID = "remote.parameters.clientid";
+    private final static String REMOTE_PARAMETERS_IDP_USER_TEMPLATE = "remote.parameters.idp_user_template";
+    private final static String REMOTE_PARAMETERS_FIRST_NAME = "remote.parameters.first_name";
+    private final static String REMOTE_PARAMETERS_LAST_NAME = "remote.parameters.last_name";
+    private final static String REMOTE_PARAMETERS_EMAIL = "remote.parameters.email";
 
     private static Client client = ClientBuilder.newClient();
 
@@ -54,7 +58,7 @@ public class JsonRemoteClaim extends AbstractOIDCProtocolMapper implements OIDCA
         // Username
         property = new ProviderConfigProperty();
         property.setName(REMOTE_PARAMETERS_USERNAME);
-        property.setLabel("Send user name");
+        property.setLabel("Send username");
         property.setType(ProviderConfigProperty.BOOLEAN_TYPE);
         property.setHelpText("Send the username as query parameter (param: username).");
         property.setDefaultValue("true");
@@ -66,6 +70,38 @@ public class JsonRemoteClaim extends AbstractOIDCProtocolMapper implements OIDCA
         property.setLabel("Send client ID");
         property.setType(ProviderConfigProperty.BOOLEAN_TYPE);
         property.setHelpText("Send the client_id as query parameter (param: client_id).");
+        property.setDefaultValue("false");
+        configProperties.add(property);
+
+        property = new ProviderConfigProperty();
+        property.setName(REMOTE_PARAMETERS_IDP_USER_TEMPLATE);
+        property.setLabel("Send IDP user template");
+        property.setType(ProviderConfigProperty.BOOLEAN_TYPE);
+        property.setHelpText("Send the IDP user provision template hardcoded attribute as query parameter (param: user_template).");
+        property.setDefaultValue("false");
+        configProperties.add(property);
+
+        property = new ProviderConfigProperty();
+        property.setName(REMOTE_PARAMETERS_FIRST_NAME);
+        property.setLabel("Send first name");
+        property.setType(ProviderConfigProperty.BOOLEAN_TYPE);
+        property.setHelpText("Send the first name as query parameter (param: first_name).");
+        property.setDefaultValue("false");
+        configProperties.add(property);
+
+        property = new ProviderConfigProperty();
+        property.setName(REMOTE_PARAMETERS_LAST_NAME);
+        property.setLabel("Send last name");
+        property.setType(ProviderConfigProperty.BOOLEAN_TYPE);
+        property.setHelpText("Send the last name as query parameter (param: last_name).");
+        property.setDefaultValue("false");
+        configProperties.add(property);
+
+        property = new ProviderConfigProperty();
+        property.setName(REMOTE_PARAMETERS_EMAIL);
+        property.setLabel("Send email");
+        property.setType(ProviderConfigProperty.BOOLEAN_TYPE);
+        property.setHelpText("Send the email as query parameter (param: email).");
         property.setDefaultValue("false");
         configProperties.add(property);
 
@@ -123,7 +159,7 @@ public class JsonRemoteClaim extends AbstractOIDCProtocolMapper implements OIDCA
     protected void setClaim(IDToken token, ProtocolMapperModel mappingModel, UserSessionModel userSession, KeycloakSession keycloakSession, ClientSessionContext clientSessionCtx) {
         JsonNode claims = clientSessionCtx.getAttribute(REMOTE_AUTHORIZATION_ATTR, JsonNode.class);
         if (claims == null) {
-            claims =  getRemoteAuthorizations(mappingModel, userSession);
+            claims = getRemoteAuthorizations(mappingModel, userSession);
             clientSessionCtx.setAttribute(REMOTE_AUTHORIZATION_ATTR, claims);
         }
 
@@ -132,7 +168,7 @@ public class JsonRemoteClaim extends AbstractOIDCProtocolMapper implements OIDCA
 
     /**
      * Deprecated, added for older versions
-     *
+     * <p>
      * Caution: This version does not allow to minimize request number
      *
      * @deprecated override {@link #setClaim(IDToken, ProtocolMapperModel, UserSessionModel, KeycloakSession, ClientSessionContext)} instead.
@@ -147,6 +183,10 @@ public class JsonRemoteClaim extends AbstractOIDCProtocolMapper implements OIDCA
         final String configuredParameter = mappingModel.getConfig().get(REMOTE_PARAMETERS);
         final boolean sendUsername = "true".equals(mappingModel.getConfig().get(REMOTE_PARAMETERS_USERNAME));
         final boolean sendClientID = "true".equals(mappingModel.getConfig().get(REMOTE_PARAMETERS_CLIENTID));
+        final boolean sendFirstName = "true".equals(mappingModel.getConfig().get(REMOTE_PARAMETERS_FIRST_NAME));
+        final boolean sendLastName = "true".equals(mappingModel.getConfig().get(REMOTE_PARAMETERS_LAST_NAME));
+        final boolean sendEmail = "true".equals(mappingModel.getConfig().get(REMOTE_PARAMETERS_EMAIL));
+        final boolean sendIdpUserTemplate = "true".equals(mappingModel.getConfig().get(REMOTE_PARAMETERS_IDP_USER_TEMPLATE));
 
         // Get parameters
         final Map<String, String> formattedParameters = buildMapFromStringConfig(configuredParameter);
@@ -157,8 +197,19 @@ public class JsonRemoteClaim extends AbstractOIDCProtocolMapper implements OIDCA
                     .map(AuthenticatedClientSessionModel::getClient)
                     .map(ClientModel::getClientId)
                     .distinct()
-                    .collect( Collectors.joining( "," ) );
+                    .collect(Collectors.joining(","));
             formattedParameters.put("client_id", clientID);
+        }
+
+        if (sendIdpUserTemplate) {
+            String idpUserTemplate = userSession.getAuthenticatedClientSessions().values().stream()
+                    .map(AuthenticatedClientSessionModel::getUserSession)
+                    .map(UserSessionModel::getNotes)
+                    .map(notes -> notes.get("idp_user_template"))
+                    .distinct()
+                    .collect(Collectors.joining(","));
+
+            formattedParameters.put("user_template", idpUserTemplate);
         }
 
         // Get username
@@ -166,10 +217,20 @@ public class JsonRemoteClaim extends AbstractOIDCProtocolMapper implements OIDCA
             formattedParameters.put("username", userSession.getLoginUsername());
         }
 
+        if (sendFirstName) {
+            formattedParameters.put("first_name", userSession.getUser().getFirstName());
+        }
+        if (sendLastName) {
+            formattedParameters.put("last_name", userSession.getUser().getLastName());
+        }
+        if (sendEmail) {
+            formattedParameters.put("email", userSession.getUser().getEmail());
+        }
+
         return formattedParameters;
     }
 
-    private Map<String, String> getheaders(ProtocolMapperModel mappingModel, UserSessionModel userSession) {
+    private Map<String, String> getHeaders(ProtocolMapperModel mappingModel, UserSessionModel userSession) {
         final String configuredHeaders = mappingModel.getConfig().get(REMOTE_HEADERS);
 
         // Get headers
@@ -198,7 +259,7 @@ public class JsonRemoteClaim extends AbstractOIDCProtocolMapper implements OIDCA
         // Get parameters
         Map<String, String> parameters = getQueryParameters(mappingModel, userSession);
         // Get headers
-        Map<String, String> headers = getheaders(mappingModel, userSession);
+        Map<String, String> headers = getHeaders(mappingModel, userSession);
 
         // Call remote service
         Response response;
@@ -216,7 +277,7 @@ public class JsonRemoteClaim extends AbstractOIDCProtocolMapper implements OIDCA
             }
             // Call
             response = builder.get();
-        } catch(RuntimeException e) {
+        } catch (RuntimeException e) {
             // exceptions are thrown to prevent token from being delivered without all information
             throw new JsonRemoteClaimException("Error when accessing remote claim", url, e);
         }
@@ -230,12 +291,11 @@ public class JsonRemoteClaim extends AbstractOIDCProtocolMapper implements OIDCA
         // Bind JSON response
         try {
             return response.readEntity(JsonNode.class);
-        } catch(RuntimeException e) {
+        } catch (RuntimeException e) {
             // exceptions are thrown to prevent token from being delivered without all information
             throw new JsonRemoteClaimException("Error when parsing response for remote claim", url, e);
         } finally {
             response.close();
         }
-
     }
 }
